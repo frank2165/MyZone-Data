@@ -1,0 +1,112 @@
+---
+title: "MyZone Data Exploration"
+author: "Marc Fletcher"
+date: "29 January 2019"
+output: html_document
+---
+
+```{r setup, include = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE, message = FALSE)
+
+## User Defined Variables
+dataCSV <- "../data/MYZONE_Activity_sept2018_jan2019.csv"
+
+
+## Attach Packages
+library(rlang)
+library(dplyr)
+library(ggplot2)
+library(magrittr)
+
+
+## Load Externally Defined Functions
+source("../R/MyZone_01_clean_data.R")
+source("../R/MyZone_02_visualisation.R")
+```
+
+
+
+
+# MyZone Challenge
+My local gym sells the MyZone MZ-3 fitness trackers and sets up regular competitions for the members who have purchased a tracker. These challenges are team based and have some very simple rules:
+
+* The team that accumulates the most MyZone Energy Points (MEPs) in the month wins,
+* Only one workout per-person per-day will count towards the team total.
+
+The MyZone fitness tracker is worn across the chest and awards MEPs for each minute of activity based on which of 5 zones the users heart rate is in. These zones are based on the users maximum theoretical heart-rate ($220 - age$ beats per minute):
+
+* 40-49% for 0 MEPs per-minute,
+* 50-59% for 1 MEP per-minute,
+* 60-69% for 2 MEPs per-minute,
+* 70-79% for 3 MEPs per-minute,
+* 80-89% for 4 MEPs per-minute,
+* 90-100% for 6 MEPs per-minute.
+
+I had my first competition in September of last year and I found the experience to be a very good source of (temporary) motivation. The competition ran for all 30 days of September and I did some kind of workout for 25 of those days (a combination of walking and working out at the gym), contributing 6,409 MEPs to the team total. The next competition begins in February and I hope to obtain a similar total, however this time I only have 28 days to do it.
+
+
+# MyZone Data
+The MyZone website makes your workout data available to you via a not so intuitive user portal. Data for each day can be downloaded as a CSV file that contains two tables, one containing a single line summary of the workout (i.e. total MEPs, time in each zone etc.) and the other table contains the average heart-rate for each minute of the workout. The data can be downloaded for a range of dates and the resulting CSV file appears to just be a concatenated version of the data for each day in the range.
+
+* Data cleaning notes
+
+
+```{r data_preview_raw}
+myzone <- MyZone_data_import(file = dataCSV)
+
+head(myzone$workouts)
+```
+
+
+The description field can be filled out for each workout and defaults to "Workout", in my case this data has not been entered with consistency but for most of the workouts it should be possible to create some indicator variables that can be used to examine similar workouts. The indicators of interest are not mutually exclusive and indicate whether:
+
+* the workout involved walking (often to/from the gym),
+* the workout was performed with a personal trainer (once per-week normally),
+* the workout occurred during a Saturday morning fitness class (high-intensity class),
+* the workout was self-directed.
+
+For most of the workouts the indicator variables could be populated by using R's regular expression functions to search for keywords (e.g. Walk, Blitz etc.), however a few had to be manually updated as the description was not helpful. The following table provides a breakdown of how many of each type of workout was recorded.
+
+
+```{r workout_classification}
+workout <- workout_variables(myzone$workouts)
+workout$Self[16:17] <- TRUE
+workout$Walk[17]    <- TRUE
+
+select(workout, PT, Blitz, Walk, Self) %>% 
+    summarise(PT = sum(PT), Blitz = sum(Blitz), Walk = sum(Walk), Self = sum(Self))
+```
+
+
+# Exploring the Data
+The MEPs accrued for a single session are expected to be strongly related to the duration of the workout and to either the average effort or to the duration of exercise spent in one of the higher heart rate brackets (i.e. time spent with a heart rate between 70-90% of the maximum). Plotting the relationships confirms that the total MEPs for a workout are strongly related to the workout duration. While the average effort does not appear to be a good predictor of total MEPs the time that the heart-rate spends in zones 3 and 4 appears to be a decent indicator, however it should be noted that the heart-rate is in zone 3 or 4 for a significant amount of the workout. There is some noise introduced into the duration measurements depending on when the tracker was worn, e.g. the duration can be inflated if the tracker was fitted at home prior to driving to the gym (an activity that accumulates a small number of MEPs per minute), a more relevant measure of exercise duration is the number of minutes that the heart-rate was above 60% of the maximum (i.e. the "Time in Zone").
+
+```{r workout_duration}
+select(workout, MEPs, Duration, `Time in Zone`, `Zone 3 Mins`, `Zone 4 Mins`) %>% 
+    tidyr::gather(Variable, Value, -MEPs) %>% 
+    ggplot(aes(x = Value, y = MEPs)) + 
+        geom_point() + 
+        geom_smooth(method = "lm") + 
+        facet_wrap(~Variable, scales = "free") + 
+        theme_bw() + 
+        labs(x = "", y = "MEPs")
+```
+
+
+The linear relationship between total MEPs and the time in zone is shown below, note that the model retains an intercept term as the time in zone is a subset of the total workout duration and so it is expected that some small number of MEPs should be accumulated even if the time in zone is zero minutes.
+
+```{r workout_lm}
+lm(MEPs ~ `Time in Zone`, data = workout) %>% 
+    summary
+```
+
+The model shows that in general:
+
+* Over 95% of the variation in the total MEPs can be explained by the time in zone,
+* on average I earn 2.75 MEPs per minute (recall that a heart-rate between 60-69% of the maximum earns 2 MEPs per minute),
+* on average 15 MEPs are accumulated with a heart-rate of less than 60% of the maximum.
+
+
+
+
+

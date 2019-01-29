@@ -1,4 +1,7 @@
 
+library(dplyr)
+library(magrittr)
+
 get_session <- function(csv){
     
     ################
@@ -11,6 +14,7 @@ get_session <- function(csv){
     
     descript.has.comma <- !any(is.na(header))
     if(descript.has.comma){
+        idx.desc <- which(names(header) == "MEPs") - 1
         description <- paste0(header[3:idx.desc], collapse = ", ")
         header[3] <- description
         header    <- header[-seq(4, idx.desc, 1)]
@@ -52,6 +56,9 @@ get_session <- function(csv){
     header$Start <- paste(start$hour, start$min, sep = ":")
     header$End   <- paste(end$hour, end$min, sep = ":")
     
+    header$Start <- formatC(header$Start, width = 5) %>% gsub("^\\s", "0", .)
+    header$End   <- formatC(header$End, width = 5)   %>% gsub("^\\s", "0", .)
+    
     
     # Convert average effort from a character string, showing percentage,
     # to a decimal fraction.
@@ -90,6 +97,37 @@ MyZone_data_import <- function(file){
     hr <- lapply(sessionList, function(x) x$hr) %>% 
         do.call("rbind", .)
     
+    
+    # Some workouts were split due to discrepancies with the time-
+    # stamps, which are applied by whichever device the MyZone is
+    # paired with.
+    meta <- group_by(meta, Date) %>% 
+        summarise(
+            Start = min(Start),
+            End = max(End), 
+            description = paste(description, collapse = " "), 
+            `Average Effort` = sum(`Average Effort` * Duration) / sum(Duration),
+            `Average Heart Rate` = sum(`Average Heart Rate` * Duration) / sum(Duration),
+            MEPs = sum(MEPs), 
+            Duration = sum(Duration), 
+            `Time in Zone` = sum(`Time in Zone`), 
+            Calories = sum(Calories), 
+            `Peak Heart Rate` = max(`Peak Heart Rate`), 
+            `Zone 0 Mins` = sum(`Zone 0 Mins`),
+            `Zone 1 Mins` = sum(`Zone 1 Mins`),
+            `Zone 2 Mins` = sum(`Zone 2 Mins`),
+            `Zone 3 Mins` = sum(`Zone 3 Mins`),
+            `Zone 4 Mins` = sum(`Zone 4 Mins`),
+            `Zone 5 Mins` = sum(`Zone 5 Mins`),
+            `Zone 0 MEPs` = sum(`Zone 0 MEPs`),
+            `Zone 1 MEPs` = sum(`Zone 1 MEPs`),
+            `Zone 2 MEPs` = sum(`Zone 2 MEPs`),
+            `Zone 3 MEPs` = sum(`Zone 3 MEPs`),
+            `Zone 4 MEPs` = sum(`Zone 4 MEPs`),
+            `Zone 5 MEPs` = sum(`Zone 5 MEPs`)
+        ) %>% ungroup
+    
+    
     return(list(workouts = meta, heat.rate = hr))
 }
 
@@ -99,12 +137,12 @@ MyZone_data_import <- function(file){
 workout_variables <- function(workouts){
     
     # Create dummy variables based on description
-    pt    <- grepl("Jesse", workouts$description, ignore.case = TRUE)
-    blitz <- grepl("Blitz", workouts$description, ignore.case = TRUE)
-    walk  <- grepl("Walk", workouts$description, ignore.case = TRUE)
-    gym   <- grepl("(Gym|Workout|Cardio)", workouts$description, ignore.case = TRUE)
+    pt    <- grepl("Jesse", workouts$description, ignore.case = TRUE) 
+    blitz <- grepl("Blitz", workouts$description, ignore.case = TRUE) 
+    walk  <- grepl("Walk", workouts$description, ignore.case = TRUE) 
+    self  <- grepl("(Gym|Workout|Cardio)", workouts$description, ignore.case = TRUE) 
     
-    mutate(workouts, PT = pt, Blitz = blitz, Walk = walk, Gym = gym)
+    mutate(workouts, PT = pt, Blitz = blitz, Walk = walk, Self = self)
 }
 
 

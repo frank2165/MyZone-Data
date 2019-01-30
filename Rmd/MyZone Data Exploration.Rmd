@@ -13,6 +13,7 @@ dataCSV <- "../data/MYZONE_Activity_sept2018_jan2019.csv"
 
 
 ## Attach Packages
+library(lme4)
 library(rlang)
 library(dplyr)
 library(ggplot2)
@@ -22,6 +23,7 @@ library(magrittr)
 ## Load Externally Defined Functions
 source("../R/MyZone_01_clean_data.R")
 source("../R/MyZone_02_visualisation.R")
+source("../R/MyZone_03_model.R")
 ```
 
 
@@ -115,7 +117,7 @@ The above linear model does not differentiate between workouts, i.e. minutes spe
 
 
 
-The number of workouts of each type is shown below, along with the median effort level and the average of the residuals for all workouts of that type (indicating whether the workouts accumulate more MEPs than expected for the given duration).
+The number of workouts of each type is shown below, along with the median effort level and the average of the residuals for all workouts of that type (indicating whether the workouts accumulate more MEPs than expected for the given duration). For consistency I have 
 
 ```{r session type}
 workout$Resid <- residuals(fit)
@@ -130,14 +132,43 @@ group_by(workout, Type) %>%
     arrange(desc(`Avg. Excess MEPs`))
 ```
 
+To further illustrate, the following plot shows the distribution of the model residuals for each workout type.
 
 ```{r session_type_meps}
-ggplot(sessions, aes(x = Type, y = Resid)) + 
+ggplot(workout, aes(x = Type, y = Resid)) + 
     geom_boxplot(fill = "#F06721", colour = "black") + 
     geom_abline(slope = 0, intercept = 0, colour = "red", linetype = "dashed") + 
     theme_classic() + 
     labs(x = "Workout Type", y = "Excess Meps")
 ```
+
+including the workout type in the model as a factor variable
+
+
+```{r average_effort}
+workout <- mutate(workout, ActiveDuration = `Time in Zone`)
+fit3 <- lme4::lmer(MEPs ~ 1 + ActiveDuration + (1|Type), data = workout)
+summary(fit3)
+```
+
+The model shows that in general:
+
+* 66% of the variation in the MEPs can be explained by the workout type,
+* on average I earn 2.71 MEPs per minute (indicating an average effort level of 67.08%),
+* on average 20.44 MEPs are accumulated during time where my heart rate is below 60% of the maximum.
+
+Using all of the above data I can begin to formulate a workout plan.
+
+
+# Workout Plan
+There are 28 days in the month of February which means that the competition can be divided evenly into four weeks. In each week I will have one session with a personal trainer and I hope to attend each of the Saturday Blitz classes. Ideally I would like to reserve Sunday as a day for giving my body some time to rest, as nothing will screw up a good exercise plan like an injury. Thus we have the following details worked out already:
+
+* Blitz classes tend to run for 90 minutes and accrue 32 MEPs more than expected from the model, so each Blitz should accumulate `r blitz <- calculate_meps(90, "Blitz", fit3); blitz` MEPs.
+* My PT sessions go for 1 hour and are generally more productive when I drive to the gym, earning 5 MEPs more than expected from the model. Each PT session is expected to yield `r pt <- calculate_meps(60, "PT", fit3); pt` MEPs.
+* My self directed sessions are most productive when I drive to the gym, however these sessions accrue 3.8 MEPs less than expected. Each hour should yield `r self <- calculate_meps(60, "Self", fit3); self` MEPs
+
+So for 1 Blitz session, 1 PT session and 4 self-directed sessions the projected weekly accumulation will be `r week <- blitz + pt + 4*self; week` MEPs, which will make for `r 4*week` MEPs for the entire competition (far short of my stated goal of 6409). Increasing self-directed workout duration to 90 minutes raises the total MEPs to `r 4 * (blitz + pt + 4*calculate_meps(90, "PT", fit3))` MEPs...oh boy.
+
 
 
 

@@ -58,23 +58,28 @@ head(myzone$workouts)
 ```
 
 
-The description field can be filled out for each workout and defaults to "Workout", in my case this data has not been entered with consistency but for most of the workouts it should be possible to create some indicator variables that can be used to examine similar workouts. The indicators of interest are not mutually exclusive and indicate whether:
+The description field can be filled out for each workout and defaults to "Workout", in my case this data has not been entered with consistency but for most of the workouts it should be possible to create some indicator variables that can be used to examine similar workouts. The workouts were sorted into one of the following typesY:
 
-* the workout involved walking (often to/from the gym),
-* the workout was performed with a personal trainer (once per-week normally),
-* the workout occurred during a Saturday morning fitness class (high-intensity class),
-* the workout was self-directed.
+* Self - gym workout with no walking,
+* PT - session with a trainer (in the gym) with no walking,
+* Self+Walk - gym session and walking to/from the gym,
+* PT+Walk - session with trainer and walking to/from the gym,
+* Walk - just walking (no gym),
+* Blitz - fitness class (no walking).
 
-For most of the workouts the indicator variables could be populated by using R's regular expression functions to search for keywords (e.g. Walk, Blitz etc.), however a few had to be manually updated as the description was not helpful. The following table provides a breakdown of how many of each type of workout was recorded.
+For most of the workouts the indicator variables could be populated by using R's regular expression functions to search for keywords (e.g. Walk, Blitz etc.), however a few had to be manually updated as the description was not helpful. The following table provides a breakdown of how many workouts of each type were recorded.
 
 
 ```{r workout_classification}
 workout <- workout_variables(myzone$workouts)
-workout$Self[16:17] <- TRUE
-workout$Walk[17]    <- TRUE
+workout$Type[16] <- "Self"
+workout$Type[17] <- "Self & Walk"
+workout$Type[38:39] <- "PT"
 
-select(workout, PT, Blitz, Walk, Self) %>% 
-    summarise(PT = sum(PT), Blitz = sum(Blitz), Walk = sum(Walk), Self = sum(Self))
+group_by(workout, Type) %>% 
+    summarise(Workouts = n()) %>% 
+    ungroup %>% 
+    arrange(desc(Workouts))
 ```
 
 
@@ -96,17 +101,43 @@ select(workout, MEPs, Duration, `Time in Zone`, `Zone 3 Mins`, `Zone 4 Mins`) %>
 The linear relationship between total MEPs and the time in zone is shown below, note that the model retains an intercept term as the time in zone is a subset of the total workout duration and so it is expected that some small number of MEPs should be accumulated even if the time in zone is zero minutes.
 
 ```{r workout_lm}
-lm(MEPs ~ `Time in Zone`, data = workout) %>% 
-    summary
+fit <- lm(MEPs ~ `Time in Zone`, data = workout)
+summary(fit)
 ```
 
 The model shows that in general:
 
-* Over 95% of the variation in the total MEPs can be explained by the time in zone,
+* Over 95% of the variation in the total MEPs can be explained by the duration of exercise with a heart rate in excess of 60% of the maximum,
 * on average I earn 2.75 MEPs per minute (recall that a heart-rate between 60-69% of the maximum earns 2 MEPs per minute),
 * on average 15 MEPs are accumulated with a heart-rate of less than 60% of the maximum.
 
+The above linear model does not differentiate between workouts, i.e. minutes spent attending a Saturday morning fitness class (Blitz) are treated the same as minutes spent working out with my personal trainer or on my own. Anecdotally I would consider Blitz to involve longer periods of high intensity exercise than either my PT sessions (which are shorter) or my self-driven workouts (lower intensity and much more variable duration).
 
+
+
+The number of workouts of each type is shown below, along with the median effort level and the average of the residuals for all workouts of that type (indicating whether the workouts accumulate more MEPs than expected for the given duration).
+
+```{r session type}
+workout$Resid <- residuals(fit)
+
+group_by(workout, Type) %>% 
+    summarise(
+        `Num. Sessions` = n(), 
+        `Avg. Effort Adj.` = round(median(`Average Effort Adj.`), 2),
+        `Avg. Excess MEPs` = round(mean(Resid), 1)
+    ) %>% 
+    ungroup %>% 
+    arrange(desc(`Avg. Excess MEPs`))
+```
+
+
+```{r session_type_meps}
+ggplot(sessions, aes(x = Type, y = Resid)) + 
+    geom_boxplot(fill = "#F06721", colour = "black") + 
+    geom_abline(slope = 0, intercept = 0, colour = "red", linetype = "dashed") + 
+    theme_classic() + 
+    labs(x = "Workout Type", y = "Excess Meps")
+```
 
 
 

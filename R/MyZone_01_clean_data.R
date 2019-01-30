@@ -142,7 +142,22 @@ workout_variables <- function(workouts){
     walk  <- grepl("Walk", workouts$description, ignore.case = TRUE) 
     self  <- grepl("(Gym|Workout|Cardio)", workouts$description, ignore.case = TRUE) 
     
-    mutate(workouts, PT = pt, Blitz = blitz, Walk = walk, Self = self)
+    tmp <- mutate(workouts, Type = case_when(
+        pt & walk ~ "PT & Walk",
+        pt & !walk ~ "PT", 
+        self & walk ~ "Self & Walk",
+        self & !walk ~ "Self",
+        walk & !(pt | self) ~ "Walk", 
+        blitz ~ "Blitz",
+        TRUE ~ NA_character_
+    ))
+    
+    tmp <- mutate(
+        .data = tmp, 
+        `Average Effort Adj.` = (`Zone 3 Mins` + `Zone 4 Mins` + `Zone 5 Mins`) / `Time in Zone`
+    )
+    
+    return(tmp)
 }
 
 
